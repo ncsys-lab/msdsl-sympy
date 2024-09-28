@@ -1,4 +1,5 @@
-from collections import OrderedDict, Iterable
+from collections import OrderedDict
+from collections.abc import Iterable
 from itertools import chain
 from numbers import Integral, Number
 from typing import List, Set, Union
@@ -778,7 +779,7 @@ class MixedSignalModel:
         # determine sel_bits
         sel_bit_names = set(signal_names(eqn_sys.get_sel_bits()))
         sel_bits = self.get_signals(sel_bit_names)
-
+        
         # return result
         return inputs, states, outputs, sel_bits
 
@@ -794,6 +795,8 @@ class MixedSignalModel:
         :param extra_outputs:   List of internal variables in the system of equations that should be bound to analog signals.
         :param clk:             Name of clock signal to use (None will default to `CLK_MSDSL)
         :param rst:             Name of the reset signal to use (None will default to `RST_MSDSL)
+
+        Returns an LDSCollection Object
         """
 
         # set defaults
@@ -804,7 +807,7 @@ class MixedSignalModel:
 
         # analyze equation to find out knowns and unknowns
         inputs, states, outputs, sel_bits = self.get_equation_io(eqn_sys)
-
+        
         # add the extra outputs as needed
         for extra_output in extra_outputs:
             if not isinstance(extra_output, Signal):
@@ -832,6 +835,8 @@ class MixedSignalModel:
 
             # add to collection of LDS systems
             collection.append(lds)
+        
+        
 
         # construct address for selection
         if len(sel_bits) > 0:
@@ -843,6 +848,10 @@ class MixedSignalModel:
         self.add_discrete_time_lds(collection=collection, inputs=inputs,
                                    states=states, outputs=outputs, sel=sel,
                                    clk=clk, rst=rst)
+
+        return collection, inputs, states, outputs, sel_bits
+
+        
 
     def add_discrete_time_lds(self, collection, inputs=None, states=None, outputs=None, sel=None,
                               clk=None, rst=None):
@@ -870,6 +879,25 @@ class MixedSignalModel:
             else:
                 self.bind_name(outputs[row].name, expr)
 
+    def get_sympy_lds(self):
+        """
+        Must be run after add_eqn_sys. 
+        Returns an array of piecewise LDSs in the form of sympy equations.
+        """
+
+        sympy_lds = []
+        
+        for circuit in self.circuits:
+            filtered_states = list(filter(lambda x: not isinstance(x, DigitalInput), circuit.sel_bits))
+            state_str = list(map(lambda x: str(x), filtered_states))
+            
+            sel_eqns = self.get_assignments(state_str)
+            
+            circuit_lds = circuit.collection.convert_to_sympy_piecewise(circuit.states, circuit.inputs, circuit.outputs, circuit.sel_bits, sel_eqns)
+            sympy_lds.append(circuit_lds)
+        
+        return sympy_lds
+        
     def set_tf(self, input_: Signal, output: Signal, tf, clk=None, rst=None):
         """
         Method to assign an output signal as a function of the input signal by applying a given transfer function.
@@ -1014,8 +1042,17 @@ class MixedSignalModel:
         # compile circuits
         for circuit in self.circuits:
             eqns = circuit.compile_to_eqn_list()
-            self.add_eqn_sys(eqns, circuit.extra_outputs, clk=circuit.clk, rst=circuit.rst)
+            ldscollection, inputs, states, outputs, sel_bits = self.add_eqn_sys(eqns, circuit.extra_outputs, clk=circuit.clk, rst=circuit.rst)
+            
+            circuit.collection = ldscollection #Assign the circuit.collection object so we may use it later.
+            circuit.inputs = inputs
+            circuit.states = states
+            circuit.outputs = outputs
+            circuit.sel_bits = sel_bits
 
+            
+
+        
         # determine the I/Os and internal variables
         ios = []
         internals = []
