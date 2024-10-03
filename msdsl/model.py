@@ -854,7 +854,7 @@ class MixedSignalModel:
         self.add_discrete_time_lds(collection=collection, inputs=inputs,
                                    states=states, outputs=outputs, sel=sel,
                                    clk=clk, rst=rst)
-
+        
         return collection, inputs, states, outputs, sel_bits
 
         
@@ -895,7 +895,7 @@ class MixedSignalModel:
         sympy_lds = []
 
         #self.assignments
-
+        
         for circuit in self.circuits:
             filtered_states = list(filter(lambda x: not isinstance(x, DigitalInput), circuit.sel_bits))
             state_str = list(map(lambda x: str(x), filtered_states))
@@ -905,7 +905,7 @@ class MixedSignalModel:
 
             circuit_lds = circuit.collection.convert_to_sympy_piecewise(circuit.states, circuit.inputs, circuit.outputs, circuit.sel_bits, sel_eqns)
             circuit.sympy_eqs = circuit_lds
-            sympy_lds.append(circuit_lds)
+            sympy_lds += circuit_lds
         
         for symbol_name, assignment_obj in self.unmodified_assignments.items():
             sympy_lds.append(sp.Eq(sp.Symbol(symbol_name), msdsl_ast_to_sympy(assignment_obj.expr)))
@@ -1067,8 +1067,10 @@ class MixedSignalModel:
     def compile(self, gen: CodeGenerator):
         # compile circuits
         self.unmodified_assignments = deepcopy(self.assignments)
+
         for circuit in self.circuits:
             eqns = circuit.compile_to_eqn_list()
+
             ldscollection, inputs, states, outputs, sel_bits = self.add_eqn_sys(eqns, circuit.extra_outputs, clk=circuit.clk, rst=circuit.rst)
             
             circuit.collection = ldscollection #Assign the circuit.collection object so we may use it later.
@@ -1076,8 +1078,8 @@ class MixedSignalModel:
             circuit.states = states
             circuit.outputs = outputs
             circuit.sel_bits = sel_bits
-
-            
+        
+        
         
         self.diffeqs = self.get_sympy_lds()
         
