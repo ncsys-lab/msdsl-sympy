@@ -4,9 +4,8 @@ import numpy as np
 import scipy.linalg
 
 import sympy as sp
+from msdsl.expr.extras import msdsl_ast_to_sympy
 from msdsl.assignment import Assignment
-from msdsl.expr.expr import Array, LessThan, GreaterThan, Product, Sum, EqualTo, UIntConstant, RealConstant, Constant
-from msdsl.expr.signals import AnalogSignal, DigitalSignal
 
 class LDS:
     def __init__(self, A=None, B=None, C=None, D=None):
@@ -159,44 +158,14 @@ class LdsCollection:
                     
             # Assign the corresponding equations to the Piecewise objects
             for i in range(len(states)):
-
-                state_eq_piecewise[i] = sp.Piecewise((state_ode[i], condition), (state_eq_piecewise[i], True))
+                state_eq_piecewise[i] = sp.Eq( sp.Derivative(states[i],sp.Symbol('t')), sp.Piecewise((state_ode[i], condition), (state_eq_piecewise[i], True)))
 
             for i in range(len(outputs)):
-                output_eq_piecewise[i] = sp.Piecewise((output_eq[i], condition), (output_eq_piecewise[i], True))
+                output_eq_piecewise[i] = sp.Eq(outputs[i], sp.Piecewise((output_eq[i], condition), (output_eq_piecewise[i], True)))
 
+        # For each equation we need to substitute in 
         return state_eq_piecewise + output_eq_piecewise
 
 
 
 
-def msdsl_ast_to_sympy(ast):
-    """
-    Convert an AST from msdsl to a sympy expression.
-    """
-    if isinstance(ast, LessThan):
-        return sp.Lt(msdsl_ast_to_sympy(ast.lhs), msdsl_ast_to_sympy(ast.rhs))
-    elif isinstance(ast, GreaterThan):
-        return sp.Gt(msdsl_ast_to_sympy(ast.lhs), msdsl_ast_to_sympy(ast.rhs))
-    elif isinstance(ast, Product):
-        accum = 1  # Corrected from 0 to 1 to properly accumulate products
-        for operand in ast.operands:
-            accum *= msdsl_ast_to_sympy(operand)
-        return accum
-    elif isinstance(ast, Sum):
-        accum = 0
-        for operand in ast.operands:
-            accum += msdsl_ast_to_sympy(operand)
-        return accum
-    elif isinstance(ast, EqualTo):
-        return sp.Eq(msdsl_ast_to_sympy(ast.lhs), msdsl_ast_to_sympy(ast.rhs))
-    elif isinstance(ast, Array):
-        elements = ast.operands[:-1]
-        address = msdsl_ast_to_sympy(ast.operands[-1])
-        return sp.Piecewise(*[(msdsl_ast_to_sympy(elem), address if i == 1 else sp.Not(address)) for i, elem in enumerate(elements)])
-    elif isinstance(ast, Constant):
-        return ast.value
-    elif isinstance(ast, AnalogSignal) or isinstance(ast, DigitalSignal):
-        return sp.Symbol(str(ast))
-    else:
-        raise Exception(f"Unsupported AST node: {type(ast)}")

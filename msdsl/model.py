@@ -31,7 +31,11 @@ from msdsl.expr.table import Table, RealTable, SIntTable, UIntTable
 from msdsl.function import GeneralFunction, Function, PlaceholderFunction, MultiFunction
 from msdsl.lfsr import LFSR
 
+from msdsl.expr.extras import msdsl_ast_to_sympy
+
 from scipy.signal import cont2discrete
+
+import sympy as sp
 
 class Bus:
     def __init__(self, signal: Signal, n: Integral):
@@ -799,6 +803,8 @@ class MixedSignalModel:
         Returns an LDSCollection Object
         """
 
+        
+
         # set defaults
         extra_outputs = extra_outputs if extra_outputs is not None else []
 
@@ -883,20 +889,40 @@ class MixedSignalModel:
         """
         Must be run after add_eqn_sys. 
         Returns an array of piecewise LDSs in the form of sympy equations.
+        Appends all assignments.
         """
 
         sympy_lds = []
-        
+
+        #self.assignments
+
         for circuit in self.circuits:
             filtered_states = list(filter(lambda x: not isinstance(x, DigitalInput), circuit.sel_bits))
             state_str = list(map(lambda x: str(x), filtered_states))
             
             sel_eqns = self.get_assignments(state_str)
             
+
             circuit_lds = circuit.collection.convert_to_sympy_piecewise(circuit.states, circuit.inputs, circuit.outputs, circuit.sel_bits, sel_eqns)
+            circuit.sympy_eqs = circuit_lds
             sympy_lds.append(circuit_lds)
         
+        for symbol_name, assignment_obj in self.unmodified_assignments.items():
+            sympy_lds.append(sp.Eq(sp.Symbol(symbol_name), msdsl_ast_to_sympy(assignment_obj.expr)))
+
         return sympy_lds
+
+    def write_sympy_lds_to_file(self, filename):
+        """
+        Must be run after compile(). 
+        Writes the sympy equations to json format.
+        """
+
+        sympy_lds = self.diffeqs
+
+        with open(filename, 'w') as f:
+            for eq in sympy_lds:
+                f.write(str(eq) + '\n')
         
     def set_tf(self, input_: Signal, output: Signal, tf, clk=None, rst=None):
         """
@@ -1040,6 +1066,7 @@ class MixedSignalModel:
 
     def compile(self, gen: CodeGenerator):
         # compile circuits
+        self.unmodified_assignments = deepcopy(self.assignments)
         for circuit in self.circuits:
             eqns = circuit.compile_to_eqn_list()
             ldscollection, inputs, states, outputs, sel_bits = self.add_eqn_sys(eqns, circuit.extra_outputs, clk=circuit.clk, rst=circuit.rst)
@@ -1051,7 +1078,9 @@ class MixedSignalModel:
             circuit.sel_bits = sel_bits
 
             
-
+        
+        self.diffeqs = self.get_sympy_lds()
+        
         
         # determine the I/Os and internal variables
         ios = []
